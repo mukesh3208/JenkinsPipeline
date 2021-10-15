@@ -1,31 +1,58 @@
 pipeline {
-    agent any
+ agent { node { label 'master' } }
+parameters {
+choice( name: 'env', choices: ['qa', 'dev', 'prod'], description: 'Passing the Testing Env' )
+choice( name: 'browser', choices: ['chrome', 'firefox'], description: 'Passing the browser under test' )
+} // parameters
 
-    stages {
-        stage('pre-build') {
+ stages {
+        stage('Prepration') {
             steps {
-                echo 'Hello World - pre-building'
-            }
-        }
-        stage('Build') {
+                script {
+                    if (params.env == 'dev'){
+                    env.URL = "https://insightsmax-dev.axtria.com/"
+                    }
+                    if (params.env == 'qa'){
+                    env.URL = "https://insightsmax-qa.axtria.com/"
+                    }
+                    if (params.env == 'prod'){
+                    env.URL = "https://insightsmax.axtria.com/"
+                    }
+                    } //script
+                } //steps
+        } // stage
+                
+        stage('Pre-Build') {
             steps {
-                echo 'Building'
-            }
-        }
-        stage('Deploy') {
+            sh '''#!/bin/bash
+                python3.6 -m venv venv
+                source ./venv/bin/activate
+                pip install -r web/requirements.txt
+                deactivate'''
+            } //stpes
+        } // stage
+		
+		stage('Test') {    
             steps {
-                echo 'Deploying'
-            }
-        }
-        stage('Test') {
-            steps {
-                echo 'Testing'
-            }
-        }
-        stage('Release') {
-            steps {
-                echo 'Releasing'
-            }
-        }
-    }
-}
+                script {
+						env.QA_MAIL_ID = 'mukesh.kumar@axtria.com'
+						sh '''#!/bin/bash
+						source ./venv/bin/activate
+						pytest ./web/tests/ds --url $URL --browser $browser
+						'''
+						
+                    } // script 
+                } // steps
+                    post {
+                      always {
+                        allure includeProperties: false, jdk: '', results: [[path: 'allure-results']]
+                        emailext (
+                            subject: "[Jenkins] Test Execution Summary",
+                            attachLog: true, attachmentsPattern: '*.log',
+                            body: '''${SCRIPT, template="allure-report.groovy"}''',
+                            to: """${env.QA_MAIL_ID}""", mimeType: 'text/html' )
+                      } // always
+                    } // post
+		}		// stage
+    } // stages
+} // pipeline
